@@ -1,0 +1,11 @@
+{
+  "name": "Example Rocket Rust application",
+  "description": "",
+  "repository": "https://github.com/harrylaou/rust-rocket-example",
+  "success_url": "/",
+  "keywords": ["rust", "rocket"],
+  "website": "",
+  "env": {
+    "BUILDPACK_URL": "https://github.com/emk/heroku-buildpack-rust.git"
+  }
+}
