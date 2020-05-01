@@ -8,47 +8,55 @@ use crate::web_client::worldometers::*;
 use rocket::{self, get, routes};
 use rocket_contrib::json::Json;
 // use job_scheduler::{Job, JobScheduler};
-use rocket::State;
-use std::sync::{RwLock, RwLockReadGuard};
+use job_scheduler::{Job, JobScheduler};
+use rocket::{Rocket, State};
+use std::sync::Arc;
 use tokio::runtime::Runtime;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 struct AppState {
-    time_series: RwLock<TimeSeries>,
+    time_series: Arc<RwLock<TimeSeries>>,
 }
 
 #[get("/")]
-async fn index(app_state: State<'_, AppState>) -> Json<TimeSeries> {
+async fn index(app_state: State<'_, Arc<AppState>>) -> Json<TimeSeries> {
     // let time_series = get_time_series().await.unwrap();
-    let time_series_guard: RwLockReadGuard<TimeSeries> =
-        app_state.inner().time_series.read().unwrap();
+    let time_series_guard: RwLockReadGuard<TimeSeries> = app_state.inner().time_series.read().await;
     let time_series: TimeSeries = time_series_guard.to_owned();
     Json(time_series)
 }
 
 fn main() {
-    // let mut job_scheduler = JobScheduler::new();
-    let time_series = Runtime::new().unwrap().block_on(get_time_series()).unwrap();
+    let mut tokio_rt: Runtime = Runtime::new().unwrap();
+    let time_series = tokio_rt.block_on(get_time_series()).unwrap();
 
-    let app_state = AppState {
-        time_series: RwLock::new(time_series),
-    };
+    let app_state: Arc<AppState> = Arc::new(AppState {
+        time_series: Arc::new(RwLock::new(time_series)),
+    });
 
-    // job_scheduler.add(Job::new("0 * * * * *".parse().unwrap(), || {
-    //     println!("I get executed every minute");
-    //     async {
-    //         let time_series_result = get_time_series().await;
-    //         match time_series_result {
-    //             Ok(time_series) => {
-    //                 let time_series_state_in = time_series_state.clone();
-    //                 let mut time_series_guard = time_series_state_in.write().unwrap();
-    //                 *time_series_guard = time_series;
-    //             }
-    //             Err(e) => eprintln!("Problem getting new timeseries: {}", e),
-    //         }
-    //     };
-    // }));
+    // let app_state_job= app_state.clone();
 
-    let _ = rocket::ignite()
+    let rocket_app = rocket::ignite()
         .mount("/", routes![index])
-        .manage(app_state)
-        .launch();
+        .manage(app_state.clone());
+
+    // let app_state_external: State<AppState> = State::from(rocket_app.clone().as_ref()).unwrap();
+
+    let mut job_scheduler = JobScheduler::new();
+    job_scheduler.add(Job::new("0 * * * * *".parse().unwrap(), || {
+        println!("job_scheduler executing");
+
+        let time_series_result: Result<TimeSeries, reqwest::Error> =
+            tokio_rt.block_on(get_time_series());
+        match time_series_result {
+            Ok(time_series) => {
+                let time_series_arc = app_state.clone().time_series.clone();
+                let mut time_series_guard: RwLockWriteGuard<TimeSeries> =
+                    tokio_rt.block_on(time_series_arc.write());
+                *time_series_guard = time_series;
+            }
+            Err(e) => eprintln!("Problem getting new timeseries: {}", e),
+        }
+    }));
+
+    rocket_app.launch();
 }
