@@ -1,18 +1,19 @@
-//! A simple Rocket application, based on the example in [Getting Started][].
-//!
-//! [Getting Started]: https://rocket.rs/v0.4/guide/getting-started/
-
 #![feature(proc_macro_hygiene, decl_macro)]
 
-use rocket::{self, get, routes};
+mod request_models;
+mod web_client;
 
-/// Declare a handler.
+use crate::request_models::time_series::TimeSeries;
+use crate::web_client::worldometers::*;
+use rocket::{self, get, routes};
+use rocket_contrib::json::Json;
+
 #[get("/")]
-fn index() -> &'static str {
-    "Hello, world!"
+async fn index() -> Json<TimeSeries> {
+    let time_series = get_time_series().await.unwrap();
+    Json(time_series)
 }
 
-/// Start our server.
 fn main() {
-    rocket::ignite().mount("/", routes![index]).launch();
+    let _ = rocket::ignite().mount("/", routes![index]).launch();
 }
