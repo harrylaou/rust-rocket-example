@@ -9,7 +9,13 @@ pub mod worldometers {
             .await?;
         println!("Status: {}", response.status());
 
-        let time_series: Result<TimeSeries, reqwest::Error> = response.json().await;
-        time_series
+        let time_series_result: Result<TimeSeries, reqwest::Error> = response.json().await;
+        let time_series_result_ref: Result<&TimeSeries, &reqwest::Error> =
+            time_series_result.as_ref();
+        println!(
+            "timeseries {}",
+            time_series_result_ref.map_or("no timeseries", |_| "works")
+        );
+        time_series_result
     }
 }
