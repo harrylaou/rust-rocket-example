@@ -7,12 +7,14 @@ use crate::request_models::time_series::TimeSeries;
 use crate::web_client::worldometers::*;
 use rocket::{self, get, routes};
 use rocket_contrib::json::Json;
-// use job_scheduler::{Job, JobScheduler};
-use job_scheduler::{Job, JobScheduler};
+
+use clokwerk::{Scheduler, TimeUnits};
 use rocket::{Rocket, State};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+
 struct AppState {
     time_series: Arc<RwLock<TimeSeries>>,
 }
@@ -33,16 +35,12 @@ fn main() {
         time_series: Arc::new(RwLock::new(time_series)),
     });
 
-    // let app_state_job= app_state.clone();
-
-    let rocket_app = rocket::ignite()
+    let rocket_app: Rocket = rocket::ignite()
         .mount("/", routes![index])
         .manage(app_state.clone());
 
-    // let app_state_external: State<AppState> = State::from(rocket_app.clone().as_ref()).unwrap();
-
-    let mut job_scheduler = JobScheduler::new();
-    job_scheduler.add(Job::new("0 * * * * *".parse().unwrap(), || {
+    let mut scheduler = Scheduler::new();
+    scheduler.every(1.minute()).run(move || {
         println!("job_scheduler executing");
 
         let time_series_result: Result<TimeSeries, reqwest::Error> =
@@ -56,7 +54,8 @@ fn main() {
             }
             Err(e) => eprintln!("Problem getting new timeseries: {}", e),
         }
-    }));
+    });
+    let _ = scheduler.watch_thread(Duration::from_millis(100));
 
-    rocket_app.launch();
+    rocket_app.launch().unwrap();
 }
